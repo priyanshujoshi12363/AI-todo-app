@@ -1,0 +1,21 @@
+# Android / Gradle
+*.iml
+.gradle/
+/local.properties
+/.idea/
+.DS_Store
+build/
+/captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.aab
+
+# Vosk speech models are large — download separately (see README)
+/app/src/main/assets/model-*/
+
+# Optional on-device Gemma model (downloaded at runtime)
+/app/src/main/assets/llm/
+
+# Claude Code local files
+.claude/settings.local.json
