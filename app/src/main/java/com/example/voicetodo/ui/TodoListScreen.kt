@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Chat
@@ -74,6 +75,7 @@ fun TodoListScreen(
     onToggle: (Todo) -> Unit,
     onDelete: (Todo) -> Unit,
     onSave: (Todo) -> Unit,
+    onAddTyped: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var editing by remember { mutableStateOf<Todo?>(null) }
@@ -89,27 +91,53 @@ fun TodoListScreen(
         return
     }
 
-    if (todos.isEmpty()) {
-        EmptyState(modifier)
-        return
+    Column(modifier.fillMaxSize()) {
+        TypeTaskBar(onAddTyped)
+        if (todos.isEmpty()) {
+            EmptyState(Modifier.weight(1f))
+        } else {
+            val active = todos.filter { !it.isDone }
+            val done = todos.filter { it.isDone }
+            LazyColumn(
+                Modifier.weight(1f).fillMaxWidth(),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                if (active.isNotEmpty()) {
+                    item { SectionHeader("TO DO", active.size) }
+                    items(active, key = { it.id }) { TodoRow(it, onToggle, onDelete) { editing = it } }
+                }
+                if (done.isNotEmpty()) {
+                    item { SectionHeader("COMPLETED", done.size) }
+                    items(done, key = { it.id }) { TodoRow(it, onToggle, onDelete) { editing = it } }
+                }
+                item { Spacer(Modifier.size(72.dp)) } // room for the mic button
+            }
+        }
     }
-    val active = todos.filter { !it.isDone }
-    val done = todos.filter { it.isDone }
+}
 
-    LazyColumn(
-        modifier.fillMaxSize(),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+@Composable
+private fun TypeTaskBar(onAdd: (String) -> Unit) {
+    var input by remember { mutableStateOf("") }
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        if (active.isNotEmpty()) {
-            item { SectionHeader("TO DO", active.size) }
-            items(active, key = { it.id }) { TodoRow(it, onToggle, onDelete) { editing = it } }
+        OutlinedTextField(
+            value = input,
+            onValueChange = { input = it },
+            modifier = Modifier.weight(1f),
+            placeholder = { Text("Type a task — e.g. “call mom at 6 pm”") },
+            singleLine = true,
+            shape = RoundedCornerShape(14.dp)
+        )
+        IconButton(
+            onClick = { if (input.isNotBlank()) { onAdd(input); input = "" } },
+            enabled = input.isNotBlank()
+        ) {
+            Icon(Icons.AutoMirrored.Filled.Send, "Add task")
         }
-        if (done.isNotEmpty()) {
-            item { SectionHeader("COMPLETED", done.size) }
-            items(done, key = { it.id }) { TodoRow(it, onToggle, onDelete) { editing = it } }
-        }
-        item { Spacer(Modifier.size(72.dp)) } // room for the mic button
     }
 }
 

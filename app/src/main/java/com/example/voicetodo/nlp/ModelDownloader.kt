@@ -11,30 +11,43 @@ import java.net.URL
 object ModelDownloader {
 
     /**
-     * Direct-download URL of a Gemma `.task` model (MediaPipe/LiteRT).
-     * Replace with a real, ungated direct link (or your own server) before shipping.
-     * Example: a HuggingFace "resolve" URL for a litert-community Gemma .task file.
+     * Direct-download URL of a Gemma `.task` model (MediaPipe/LiteRT). Gated — needs a HF token.
+     * Prefer importing a model you already have (see ChatViewModel.importModel).
      */
     const val DEFAULT_URL =
         "https://huggingface.co/litert-community/Gemma3-1B-IT/resolve/main/gemma3-1b-it-int4.task"
 
-    /** Downloads to [dest], reporting 0..100. Returns true on success. */
-    suspend fun download(url: String, dest: File, onProgress: (Int) -> Unit): Boolean =
-        withContext(Dispatchers.IO) {
-            var conn: HttpURLConnection? = null
-            val tmp = File(dest.parentFile, dest.name + ".part")
-            try {
-                dest.parentFile?.mkdirs()
-                conn = (URL(url).openConnection() as HttpURLConnection).apply {
-                    connectTimeout = 30000
-                    readTimeout = 30000
-                    instanceFollowRedirects = true
+    /**
+     * Downloads to [dest], reporting 0..100. Returns [Result] with an error message on failure.
+     * [token] is a HuggingFace read token (hf_...) for gated models like Gemma.
+     */
+    suspend fun download(
+        url: String,
+        dest: File,
+        token: String? = null,
+        onProgress: (Int) -> Unit
+    ): Result = withContext(Dispatchers.IO) {
+        var conn: HttpURLConnection? = null
+        val tmp = File(dest.parentFile, dest.name + ".part")
+        try {
+            dest.parentFile?.mkdirs()
+            conn = (URL(url).openConnection() as HttpURLConnection).apply {
+                connectTimeout = 30000
+                readTimeout = 30000
+                instanceFollowRedirects = true
+                if (!token.isNullOrBlank()) setRequestProperty("Authorization", "Bearer ${token.trim()}")
+            }
+            conn.connect()
+            val code = conn.responseCode
+            if (code !in 200..299) {
+                Log.e("ModelDownloader", "HTTP $code")
+                val msg = when (code) {
+                    401, 403 -> "Access denied ($code). Accept the Gemma license on HuggingFace and use a valid token."
+                    404 -> "Model file not found ($code). Check the URL."
+                    else -> "Download failed (HTTP $code)."
                 }
-                conn.connect()
-                if (conn.responseCode !in 200..299) {
-                    Log.e("ModelDownloader", "HTTP ${conn.responseCode}")
-                    return@withContext false
-                }
+                return@withContext Result(false, msg)
+            }
                 val total = conn.contentLengthLong
                 conn.inputStream.use { input ->
                     tmp.outputStream().use { output ->
@@ -53,13 +66,16 @@ object ModelDownloader {
                     }
                 }
                 if (dest.exists()) dest.delete()
-                tmp.renameTo(dest)
+                val ok = tmp.renameTo(dest)
+                if (ok) Result(true, null) else Result(false, "Could not save the model file.")
             } catch (t: Throwable) {
                 Log.e("ModelDownloader", "Download failed", t)
                 tmp.delete()
-                false
+                Result(false, "Download error: ${t.message ?: t.javaClass.simpleName}")
             } finally {
                 conn?.disconnect()
             }
         }
+
+    data class Result(val success: Boolean, val error: String?)
 }

@@ -40,6 +40,10 @@ android {
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
     }
+    androidResources {
+        // Keep the bundled model uncompressed so it can be copied out quickly.
+        noCompress += "task"
+    }
 }
 
 dependencies {
@@ -59,9 +63,6 @@ dependencies {
     implementation("androidx.room:room-runtime:2.6.1")
     implementation("androidx.room:room-ktx:2.6.1")
     ksp("androidx.room:room-compiler:2.6.1")
-
-    // Vosk — fully offline, open-source speech recognition
-    implementation("com.alphacephei:vosk-android:0.3.47")
 
     // MediaPipe / LiteRT — on-device Gemma LLM for offline understanding
     implementation("com.google.mediapipe:tasks-genai:0.10.35")

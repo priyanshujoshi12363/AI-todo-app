@@ -1,5 +1,7 @@
 package com.example.voicetodo.ui
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -36,7 +38,16 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun ChatScreen(vm: ChatViewModel, modifier: Modifier = Modifier) {
     if (!vm.available) {
-        EnableAiCard(vm.downloading, vm.progress, vm::enableAi, modifier)
+        val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            uri?.let { vm.importModel(it) }
+        }
+        EnableAiCard(
+            downloading = vm.downloading,
+            progress = vm.progress,
+            onEnable = vm::enableAi,
+            onImport = { picker.launch(arrayOf("application/octet-stream", "*/*")) },
+            modifier = modifier
+        )
         return
     }
 
@@ -98,31 +109,74 @@ private fun ChatBubble(m: ChatMsg) {
 }
 
 @Composable
-private fun EnableAiCard(downloading: Boolean, progress: Int, onEnable: () -> Unit, modifier: Modifier) {
+private fun EnableAiCard(
+    downloading: Boolean,
+    progress: Int,
+    onEnable: (String) -> Unit,
+    onImport: () -> Unit,
+    modifier: Modifier
+) {
+    var token by remember { mutableStateOf("") }
     Column(
         modifier.fillMaxSize().padding(28.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Text("On-device AI chat", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+        Text("Enable on-device AI", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
         Text(
-            "Enable the offline Gemma model to chat locally and improve your notes. " +
-                "This downloads ~1 GB once, then works fully offline.",
+            "This Gemma model powers voice understanding, note cleanup, and chat — all offline. " +
+                "Best option: import the Gemma .task file you already have on your phone.",
             Modifier.padding(top = 8.dp),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+
         if (downloading) {
             LinearProgressIndicator(
                 progress = { progress / 100f },
                 modifier = Modifier.fillMaxWidth().padding(top = 20.dp)
             )
-            Text("Downloading… $progress%", Modifier.padding(top = 8.dp))
-        } else {
-            Button(onClick = onEnable, Modifier.padding(top = 20.dp), shape = RoundedCornerShape(12.dp)) {
-                Text("Enable AI (downloads ~1 GB)")
-            }
+            Text("Setting up… $progress%", Modifier.padding(top = 8.dp))
+            CircularProgressIndicator(Modifier.padding(top = 16.dp).size(20.dp), strokeWidth = 2.dp)
+            return@Column
         }
-        if (downloading) CircularProgressIndicator(Modifier.padding(top = 16.dp).size(20.dp), strokeWidth = 2.dp)
+
+        // Primary: import an existing .task file
+        Button(
+            onClick = onImport,
+            modifier = Modifier.fillMaxWidth().padding(top = 20.dp),
+            shape = RoundedCornerShape(12.dp)
+        ) { Text("Import Gemma .task file") }
+        Text(
+            "Pick the model you already downloaded (e.g. via AI Edge Gallery / Downloads).",
+            Modifier.padding(top = 6.dp),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        // Alternative: download with a HuggingFace token
+        Text(
+            "— or download it (needs a free HuggingFace token, ~3 GB) —",
+            Modifier.padding(top = 20.dp),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        OutlinedTextField(
+            value = token, onValueChange = { token = it },
+            label = { Text("HuggingFace token (hf_…)") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+        )
+        OutlinedButtonEnable(token, onEnable)
     }
+}
+
+@Composable
+private fun OutlinedButtonEnable(token: String, onEnable: (String) -> Unit) {
+    Button(
+        onClick = { onEnable(token) },
+        enabled = token.isNotBlank(),
+        modifier = Modifier.padding(top = 8.dp),
+        shape = RoundedCornerShape(12.dp)
+    ) { Text("Download & Enable") }
 }

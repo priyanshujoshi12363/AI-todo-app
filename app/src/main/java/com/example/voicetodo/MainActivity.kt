@@ -67,7 +67,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.voicetodo.stt.VoskManager
+import com.example.voicetodo.stt.AndroidSpeech
 import com.example.voicetodo.ui.CalendarScreen
 import com.example.voicetodo.ui.ChatScreen
 import com.example.voicetodo.ui.ChatViewModel
@@ -80,13 +80,13 @@ import com.example.voicetodo.ui.theme.VoiceTodoTheme
 
 class MainActivity : ComponentActivity() {
 
-    private lateinit var vosk: VoskManager
+    private lateinit var speech: AndroidSpeech
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        vosk = VoskManager(applicationContext, modelAssetDir = "model-en-us")
+        speech = AndroidSpeech(applicationContext)
         requestStartupPermissions()
-        setContent { VoiceTodoTheme { AppRoot(vosk) } }
+        setContent { VoiceTodoTheme { AppRoot(speech) } }
     }
 
     private fun requestStartupPermissions() {
@@ -107,14 +107,14 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
-        vosk.release()
+        speech.release()
         super.onDestroy()
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AppRoot(vosk: VoskManager) {
+private fun AppRoot(speech: AndroidSpeech) {
     val context = LocalContext.current
     val vm: TodoViewModel = viewModel()
     val notesVm: NotesViewModel = viewModel()
@@ -126,9 +126,9 @@ private fun AppRoot(vosk: VoskManager) {
     var pendingHandler by remember { mutableStateOf<((String) -> Unit)?>(null) }
 
     LaunchedEffect(Unit) {
-        voice.startImpl = { vosk.startListening() }
-        voice.stopImpl = { vosk.stopListening() }
-        vosk.init(object : VoskManager.Callbacks {
+        voice.startImpl = { speech.startListening() }
+        voice.stopImpl = { speech.stopListening() }
+        speech.init(object : AndroidSpeech.Callbacks {
             override fun onReady() { voice.onReady() }
             override fun onPartial(text: String) { voice.onPartial(text) }
             override fun onFinalText(text: String) { voice.onFinal(text) }
@@ -207,6 +207,13 @@ private fun AppRoot(vosk: VoskManager) {
                     onToggle = vm::toggleDone,
                     onDelete = vm::delete,
                     onSave = vm::update,
+                    onAddTyped = { text ->
+                        vm.addFromSpeech(text) { saved ->
+                            val msg = if (saved.size == 1) "Added: ${saved.first().title}"
+                            else "Added ${saved.size} tasks"
+                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                        }
+                    },
                     modifier = mod
                 )
                 1 -> CalendarScreen(

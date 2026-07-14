@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import com.google.mediapipe.tasks.genai.llminference.LlmInference
 import com.google.mediapipe.tasks.genai.llminference.LlmInference.LlmInferenceOptions
+import com.google.mediapipe.tasks.genai.llminference.ProgressListener
 import java.io.File
 
 /**
@@ -36,6 +37,8 @@ class LlmNlu private constructor(private val context: Context) {
     fun init(): Boolean {
         if (llm != null) return true
         val model = modelFile()
+        // If not imported/downloaded yet, try a model bundled in the APK (assets/llm/gemma.task).
+        if (!model.exists()) copyBundledModelIfPresent(model)
         if (!model.exists()) {
             Log.i("LlmNlu", "No Gemma model at ${model.absolutePath} — using rule parser")
             return false
@@ -52,6 +55,23 @@ class LlmNlu private constructor(private val context: Context) {
             Log.e("LlmNlu", "Failed to load Gemma", t)
             null.also { llm = null }
             false
+        }
+    }
+
+    /** Copy a model bundled at assets/llm/gemma.task into files storage (once). */
+    private fun copyBundledModelIfPresent(dest: File) {
+        val assetPath = "llm/gemma.task"
+        val exists = runCatching { context.assets.open(assetPath).close(); true }.getOrDefault(false)
+        if (!exists) return
+        try {
+            dest.parentFile?.mkdirs()
+            context.assets.open(assetPath).use { input ->
+                dest.outputStream().use { output -> input.copyTo(output) }
+            }
+            Log.i("LlmNlu", "Copied bundled Gemma model into ${dest.absolutePath}")
+        } catch (t: Throwable) {
+            Log.e("LlmNlu", "Failed to copy bundled model", t)
+            dest.delete()
         }
     }
 
@@ -87,7 +107,39 @@ class LlmNlu private constructor(private val context: Context) {
         }
     }
 
-    /** Free-form local chat. [history] is prior turns as ("user"/"model", text). */
+    /**
+     * Streaming chat: [onToken] fires for each partial chunk as Gemma generates it,
+     * [onDone] fires when finished. Runs on a MediaPipe background thread.
+     */
+    fun chatStream(
+        message: String,
+        history: List<Pair<String, String>>,
+        onToken: (String) -> Unit,
+        onDone: () -> Unit
+    ) {
+        val engine = llm ?: run { onDone(); return }
+        val prompt = buildChatPrompt(message, history)
+        try {
+            engine.generateResponseAsync(prompt, ProgressListener<String> { partial, done ->
+                if (!partial.isNullOrEmpty()) onToken(partial)
+                if (done) onDone()
+            })
+        } catch (t: Throwable) {
+            Log.e("LlmNlu", "Streaming chat failed", t)
+            onDone()
+        }
+    }
+
+    private fun buildChatPrompt(message: String, history: List<Pair<String, String>>): String {
+        val sb = StringBuilder()
+        for ((role, text) in history.takeLast(6)) {
+            sb.append("<start_of_turn>$role\n$text<end_of_turn>\n")
+        }
+        sb.append("<start_of_turn>user\n$message<end_of_turn>\n<start_of_turn>model\n")
+        return sb.toString()
+    }
+
+    /** Free-form local chat (blocking). [history] is prior turns as ("user"/"model", text). */
     fun chat(message: String, history: List<Pair<String, String>> = emptyList()): String? {
         val engine = llm ?: return null
         val sb = StringBuilder()
