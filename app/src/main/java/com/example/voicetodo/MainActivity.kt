@@ -101,8 +101,9 @@ class MainActivity : ComponentActivity() {
             ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
         }
         if (wanted.isNotEmpty()) {
-            registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {}
-                .launch(wanted.toTypedArray())
+            registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+                com.example.voicetodo.notify.NotificationHelper.showQuickAdd(applicationContext)
+            }.launch(wanted.toTypedArray())
         }
     }
 

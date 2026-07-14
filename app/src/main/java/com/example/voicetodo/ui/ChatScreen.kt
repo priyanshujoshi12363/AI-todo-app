@@ -1,7 +1,5 @@
 package com.example.voicetodo.ui
 
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -19,7 +17,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -37,52 +34,43 @@ import androidx.compose.ui.unit.dp
 
 @Composable
 fun ChatScreen(vm: ChatViewModel, modifier: Modifier = Modifier) {
-    if (!vm.available) {
-        val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-            uri?.let { vm.importModel(it) }
-        }
-        EnableAiCard(
-            downloading = vm.downloading,
-            progress = vm.progress,
-            onEnable = vm::enableAi,
-            onImport = { picker.launch(arrayOf("application/octet-stream", "*/*")) },
-            modifier = modifier
-        )
-        return
+    when {
+        vm.loading -> StatusCard("Setting up AI…", "Loading Gemma on your device (first time takes a few seconds).", showSpinner = true, modifier = modifier)
+        !vm.available -> StatusCard("AI couldn't load", "The on-device model failed to start.", actionLabel = "Retry", onAction = vm::retry, modifier = modifier)
+        else -> ChatContent(vm, modifier)
     }
+}
 
+@Composable
+private fun ChatContent(vm: ChatViewModel, modifier: Modifier) {
     val listState = rememberLazyListState()
     var input by remember { mutableStateOf("") }
 
-    LaunchedEffect(vm.messages.size) {
+    LaunchedEffect(vm.messages.size, vm.messages.lastOrNull()?.text) {
         if (vm.messages.isNotEmpty()) listState.animateScrollToItem(vm.messages.size - 1)
     }
 
     Column(modifier.fillMaxSize().padding(12.dp)) {
-        LazyColumn(
-            Modifier.weight(1f).fillMaxWidth(),
-            state = listState,
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            items(vm.messages) { m -> ChatBubble(m) }
-            if (vm.thinking) item {
-                Text("Gemma is thinking…", style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (vm.messages.isEmpty()) {
+            Column(Modifier.weight(1f).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                Text("Ask Gemma anything", style = MaterialTheme.typography.titleMedium)
+                Text("Runs fully on your phone, offline.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        } else {
+            LazyColumn(Modifier.weight(1f).fillMaxWidth(), state = listState, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(vm.messages) { m -> ChatBubble(m) }
             }
         }
-        Row(
-            Modifier.fillMaxWidth().padding(top = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
+        Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             OutlinedTextField(
                 value = input, onValueChange = { input = it },
                 modifier = Modifier.weight(1f),
-                placeholder = { Text("Ask Gemma…") }
+                placeholder = { Text(if (vm.thinking) "Gemma is typing…" else "Message") },
+                shape = RoundedCornerShape(20.dp)
             )
-            IconButton(
-                onClick = { vm.send(input); input = "" },
-                enabled = input.isNotBlank() && !vm.thinking
-            ) { Icon(Icons.AutoMirrored.Filled.Send, "Send") }
+            IconButton(onClick = { vm.send(input); input = "" }, enabled = input.isNotBlank() && !vm.thinking) {
+                Icon(Icons.AutoMirrored.Filled.Send, "Send")
+            }
         }
     }
 }
@@ -90,17 +78,14 @@ fun ChatScreen(vm: ChatViewModel, modifier: Modifier = Modifier) {
 @Composable
 private fun ChatBubble(m: ChatMsg) {
     val scheme = MaterialTheme.colorScheme
-    Row(
-        Modifier.fillMaxWidth(),
-        horizontalArrangement = if (m.user) Arrangement.End else Arrangement.Start
-    ) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = if (m.user) Arrangement.End else Arrangement.Start) {
         Surface(
             shape = RoundedCornerShape(16.dp),
             color = if (m.user) scheme.primary else scheme.surfaceVariant
         ) {
             Text(
-                m.text,
-                Modifier.padding(12.dp),
+                m.text.ifEmpty { "…" },
+                Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
                 color = if (m.user) scheme.onPrimary else scheme.onSurface,
                 style = MaterialTheme.typography.bodyMedium
             )
@@ -109,74 +94,31 @@ private fun ChatBubble(m: ChatMsg) {
 }
 
 @Composable
-private fun EnableAiCard(
-    downloading: Boolean,
-    progress: Int,
-    onEnable: (String) -> Unit,
-    onImport: () -> Unit,
-    modifier: Modifier
+private fun StatusCard(
+    title: String,
+    subtitle: String,
+    showSpinner: Boolean = false,
+    actionLabel: String? = null,
+    onAction: (() -> Unit)? = null,
+    modifier: Modifier = Modifier
 ) {
-    var token by remember { mutableStateOf("") }
     Column(
         modifier.fillMaxSize().padding(28.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Text("Enable on-device AI", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+        if (showSpinner) CircularProgressIndicator(Modifier.padding(bottom = 20.dp).size(32.dp), strokeWidth = 3.dp)
+        Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
         Text(
-            "This Gemma model powers voice understanding, note cleanup, and chat — all offline. " +
-                "Best option: import the Gemma .task file you already have on your phone.",
+            subtitle,
             Modifier.padding(top = 8.dp),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-
-        if (downloading) {
-            LinearProgressIndicator(
-                progress = { progress / 100f },
-                modifier = Modifier.fillMaxWidth().padding(top = 20.dp)
-            )
-            Text("Setting up… $progress%", Modifier.padding(top = 8.dp))
-            CircularProgressIndicator(Modifier.padding(top = 16.dp).size(20.dp), strokeWidth = 2.dp)
-            return@Column
+        if (actionLabel != null && onAction != null) {
+            Button(onClick = onAction, Modifier.padding(top = 20.dp), shape = RoundedCornerShape(12.dp)) {
+                Text(actionLabel)
+            }
         }
-
-        // Primary: import an existing .task file
-        Button(
-            onClick = onImport,
-            modifier = Modifier.fillMaxWidth().padding(top = 20.dp),
-            shape = RoundedCornerShape(12.dp)
-        ) { Text("Import Gemma .task file") }
-        Text(
-            "Pick the model you already downloaded (e.g. via AI Edge Gallery / Downloads).",
-            Modifier.padding(top = 6.dp),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-
-        // Alternative: download with a HuggingFace token
-        Text(
-            "— or download it (needs a free HuggingFace token, ~3 GB) —",
-            Modifier.padding(top = 20.dp),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        OutlinedTextField(
-            value = token, onValueChange = { token = it },
-            label = { Text("HuggingFace token (hf_…)") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-        )
-        OutlinedButtonEnable(token, onEnable)
     }
-}
-
-@Composable
-private fun OutlinedButtonEnable(token: String, onEnable: (String) -> Unit) {
-    Button(
-        onClick = { onEnable(token) },
-        enabled = token.isNotBlank(),
-        modifier = Modifier.padding(top = 8.dp),
-        shape = RoundedCornerShape(12.dp)
-    ) { Text("Download & Enable") }
 }

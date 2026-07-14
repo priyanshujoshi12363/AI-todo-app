@@ -5,7 +5,9 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import androidx.core.app.NotificationCompat
+import androidx.core.app.RemoteInput
 import androidx.core.content.getSystemService
 import com.example.voicetodo.MainActivity
 import com.example.voicetodo.R
@@ -15,6 +17,9 @@ import com.example.voicetodo.ui.ActionActivity
 object NotificationHelper {
     const val CHANNEL_ID = "todo_reminders"
     const val CALL_CHANNEL_ID = "call_alerts"
+    const val QUICK_CHANNEL_ID = "quick_add"
+    const val QUICK_NOTIF_ID = 424242
+    const val KEY_QUICK_TEXT = "quick_text"
 
     fun createChannel(context: Context) {
         val nm = context.getSystemService<NotificationManager>() ?: return
@@ -29,6 +34,40 @@ object NotificationHelper {
                     setBypassDnd(true)
                 }
         )
+        nm.createNotificationChannel(
+            NotificationChannel(QUICK_CHANNEL_ID, "Quick add", NotificationManager.IMPORTANCE_LOW)
+                .apply { description = "Add a task straight from the notification shade" }
+        )
+    }
+
+    /** Persistent notification with an inline reply to add a task without opening the app. */
+    fun showQuickAdd(context: Context, lastAdded: String? = null) {
+        val remoteInput = RemoteInput.Builder(KEY_QUICK_TEXT).setLabel("Type a task…").build()
+        val replyPending = PendingIntent.getBroadcast(
+            context, 7, Intent(context, QuickAddReceiver::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or
+                (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) PendingIntent.FLAG_MUTABLE else 0)
+        )
+        val action = NotificationCompat.Action.Builder(R.drawable.ic_check, "Add task", replyPending)
+            .addRemoteInput(remoteInput)
+            .setAllowGeneratedReplies(false)
+            .build()
+
+        val openPending = PendingIntent.getActivity(
+            context, 8, Intent(context, MainActivity::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val notification = NotificationCompat.Builder(context, QUICK_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_launcher)
+            .setContentTitle("Voice Todo")
+            .setContentText(lastAdded?.let { "Added: $it" } ?: "Tap ‘Add task’ to jot one down")
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .addAction(action)
+            .setContentIntent(openPending)
+            .build()
+        context.getSystemService<NotificationManager>()?.notify(QUICK_NOTIF_ID, notification)
     }
 
     fun show(context: Context, id: Long, title: String) {

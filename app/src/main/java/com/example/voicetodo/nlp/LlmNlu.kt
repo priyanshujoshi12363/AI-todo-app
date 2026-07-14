@@ -33,7 +33,9 @@ class LlmNlu private constructor(private val context: Context) {
 
     fun modelFile(): File = File(context.getExternalFilesDir(null), "llm/gemma.task")
 
-    /** Load the model. Heavy + slow — call off the main thread. Returns true if ready. */
+    /** Load the model. Heavy + slow — call off the main thread. Returns true if ready.
+     *  Synchronized so concurrent callers don't copy/load the 529 MB model twice. */
+    @Synchronized
     fun init(): Boolean {
         if (llm != null) return true
         val model = modelFile()

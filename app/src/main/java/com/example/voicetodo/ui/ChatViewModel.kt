@@ -21,17 +21,24 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     private val llm = LlmNlu.get(app)
 
     var available by mutableStateOf(false); private set
+    var loading by mutableStateOf(true); private set
     var downloading by mutableStateOf(false); private set
     var progress by mutableStateOf(0); private set
     var messages by mutableStateOf(listOf<ChatMsg>()); private set
     var thinking by mutableStateOf(false); private set
 
-    init {
+    init { load() }
+
+    /** Load the inbuilt Gemma model (copies it out of assets on first run). */
+    private fun load() {
+        loading = true
         viewModelScope.launch(Dispatchers.Default) {
             val ok = llm.init()
-            withContext(Dispatchers.Main) { available = ok }
+            withContext(Dispatchers.Main) { available = ok; loading = false }
         }
     }
+
+    fun retry() = load()
 
     /** Download the gated Gemma model (~1 GB) with a HuggingFace token, then load it. */
     fun enableAi(token: String) {
